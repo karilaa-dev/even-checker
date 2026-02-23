@@ -1,7 +1,7 @@
 const API_BASE = "https://track.evenrealities.com";
 const FALLBACK_API_KEY = "1600082c-e5f9-11f0-aad8-42010a08401c";
 const KEY_CACHE_TTL = 43200; // 12 hours
-const CACHE_KEY_URL = "https://even-checker-internal/api-key";
+const CACHE_KEY_URL = "https://even-track-internal/api-key";
 
 let memCachedKey: string | null = null;
 let memCachedAt = 0;
