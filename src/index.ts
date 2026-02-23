@@ -1,6 +1,6 @@
 const API_BASE = "https://track.evenrealities.com";
 const FALLBACK_API_KEY = "1600082c-e5f9-11f0-aad8-42010a08401c";
-const KEY_CACHE_TTL = 3600; // 1 hour
+const KEY_CACHE_TTL = 43200; // 12 hours
 const CACHE_KEY_URL = "https://even-checker-internal/api-key";
 
 let memCachedKey: string | null = null;
@@ -97,7 +97,10 @@ async function getApiKey(): Promise<string> {
     await cache.put(
       cacheReq,
       new Response(scraped, {
-        headers: { "Cache-Control": `public, max-age=${KEY_CACHE_TTL}`, "Content-Type": "text/plain" },
+        headers: {
+          "Cache-Control": `public, max-age=${KEY_CACHE_TTL}`,
+          "Content-Type": "text/plain",
+        },
       }),
     );
     return scraped;
@@ -113,7 +116,9 @@ export default {
     const orderNumber = url.searchParams.get("order_number");
 
     if (!email || !orderNumber) {
-      return new Response(renderForm(), { headers: { "Content-Type": "text/html;charset=UTF-8" } });
+      return new Response(renderForm(), {
+        headers: { "Content-Type": "text/html;charset=UTF-8" },
+      });
     }
 
     try {
@@ -152,14 +157,20 @@ export default {
 function formatDate(iso: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 // Progress step computation (mirrors the original site logic)
 // Steps: 1=Order placed, 2=In production, 3=Warehouse processing, 4=Shipped
 
 function getCoreProducts(items: LineItem[]): LineItem[] {
-  return items.filter(i => i.is_core_product && (i.current_quantity || 0) > 0);
+  return items.filter(
+    (i) => i.is_core_product && (i.current_quantity || 0) > 0,
+  );
 }
 
 function isShipped(item: LineItem): boolean {
@@ -167,7 +178,10 @@ function isShipped(item: LineItem): boolean {
 }
 
 function hasSchedule(item: LineItem): boolean {
-  return !!item.expected_ship_week_start?.trim() && !!item.expected_ship_week_end?.trim();
+  return (
+    !!item.expected_ship_week_start?.trim() &&
+    !!item.expected_ship_week_end?.trim()
+  );
 }
 
 function hasReachedScheduleEnd(item: LineItem): boolean {
@@ -180,23 +194,29 @@ function computeProgressStep(items: LineItem[]): number {
   const core = getCoreProducts(items);
   if (core.length === 0) return 1;
 
-  const allShipped = core.every(i => isShipped(i));
+  const allShipped = core.every((i) => isShipped(i));
   if (allShipped) return 4;
 
-  const anyShipped = core.some(i => isShipped(i));
+  const anyShipped = core.some((i) => isShipped(i));
   if (anyShipped) return 3;
 
-  const allCompleted = core.every(i => hasSchedule(i) && hasReachedScheduleEnd(i));
+  const allCompleted = core.every(
+    (i) => hasSchedule(i) && hasReachedScheduleEnd(i),
+  );
   if (allCompleted) return 3;
 
-  const noScheduled = !core.some(i => hasSchedule(i));
+  const noScheduled = !core.some((i) => hasSchedule(i));
   if (noScheduled) return 1;
 
   // Some or all scheduled but not yet completed
   return 2;
 }
 
-function itemStatusText(status: number, fulfilledQty: number, qty: number): string {
+function itemStatusText(
+  status: number,
+  fulfilledQty: number,
+  qty: number,
+): string {
   if (fulfilledQty >= qty) return "Shipped";
   if (fulfilledQty > 0) return "Partially Shipped";
   if (status === 1) return "Processing";
@@ -267,7 +287,9 @@ ${body}
 }
 
 function renderForm(): string {
-  return page("Even Realities Order Checker", `
+  return page(
+    "Even Realities Order Checker",
+    `
     <div class="card">
       <h1>Even Realities Order Checker</h1>
       <p class="subtitle">Enter your details to check order status</p>
@@ -279,21 +301,30 @@ function renderForm(): string {
         <button type="submit">Check Order</button>
       </form>
     </div>
-  `);
+  `,
+  );
 }
 
 function renderError(message: string): string {
-  return page("Error - Order Checker", `
+  return page(
+    "Error - Order Checker",
+    `
     <div class="card error">
       <h2>Order Not Found</h2>
       <p>${escapeHtml(message)}</p>
       <p style="margin-top:1rem;"><a href="/" style="color:#2563eb;">Try again</a></p>
     </div>
-  `);
+  `,
+  );
 }
 
 function renderProgressBar(step: number): string {
-  const steps = ["Order placed", "In production", "Warehouse processing", "Shipped"];
+  const steps = [
+    "Order placed",
+    "In production",
+    "Warehouse processing",
+    "Shipped",
+  ];
   const checkSvg = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5.5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   const activeCheckSvg = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5.5" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   const chevronSvg = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 3.5L9 7l-3.5 3.5" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -303,21 +334,23 @@ function renderProgressBar(step: number): string {
   // Fill width relative to track: (step-1) / (numSteps-1) * 100%
   const fillPct = Math.round(((step - 1) / (steps.length - 1)) * 100);
 
-  const stepsHtml = steps.map((label, i) => {
-    const stepNum = i + 1;
-    let cls = "step";
-    let dot: string;
-    if (stepNum < step) {
-      cls += " completed";
-      dot = `<div class="step-dot">${checkSvg}</div>`;
-    } else if (stepNum === step) {
-      cls += " active";
-      dot = `<div class="step-dot">${activeCheckSvg}</div>`;
-    } else {
-      dot = `<div class="step-dot">${chevronSvg}</div>`;
-    }
-    return `<div class="${cls}">${dot}<div class="step-label">${label}</div></div>`;
-  }).join("");
+  const stepsHtml = steps
+    .map((label, i) => {
+      const stepNum = i + 1;
+      let cls = "step";
+      let dot: string;
+      if (stepNum < step) {
+        cls += " completed";
+        dot = `<div class="step-dot">${checkSvg}</div>`;
+      } else if (stepNum === step) {
+        cls += " active";
+        dot = `<div class="step-dot">${activeCheckSvg}</div>`;
+      } else {
+        dot = `<div class="step-dot">${chevronSvg}</div>`;
+      }
+      return `<div class="${cls}">${dot}<div class="step-label">${label}</div></div>`;
+    })
+    .join("");
 
   return `
     <div class="card">
@@ -337,18 +370,21 @@ function renderOrder(order: OrderData, email: string): string {
 
   const estStart = formatDate(order.estimatedDeleiveryStartDate);
   const estEnd = formatDate(order.estimatedDeliveryEndDate);
-  const estimatedRange = estStart !== "—" && estEnd !== "—" ? `${estStart} – ${estEnd}` : "—";
+  const estimatedRange =
+    estStart !== "—" && estEnd !== "—" ? `${estStart} – ${estEnd}` : "—";
 
   let trackingHtml = "";
   if (order.fulfillments && order.fulfillments.length > 0) {
-    const trackingItems = order.fulfillments.map((f) => {
-      const company = f.tracking_company || "Carrier";
-      const num = f.tracking_number || "—";
-      if (f.tracking_url) {
-        return `<div class="row"><span class="label">${escapeHtml(company)}</span><span class="value"><a class="tracking-link" href="${escapeHtml(f.tracking_url)}" target="_blank">${escapeHtml(num)}</a></span></div>`;
-      }
-      return `<div class="row"><span class="label">${escapeHtml(company)}</span><span class="value">${escapeHtml(num)}</span></div>`;
-    }).join("");
+    const trackingItems = order.fulfillments
+      .map((f) => {
+        const company = f.tracking_company || "Carrier";
+        const num = f.tracking_number || "—";
+        if (f.tracking_url) {
+          return `<div class="row"><span class="label">${escapeHtml(company)}</span><span class="value"><a class="tracking-link" href="${escapeHtml(f.tracking_url)}" target="_blank">${escapeHtml(num)}</a></span></div>`;
+        }
+        return `<div class="row"><span class="label">${escapeHtml(company)}</span><span class="value">${escapeHtml(num)}</span></div>`;
+      })
+      .join("");
 
     trackingHtml = `
       <div class="card">
@@ -357,14 +393,20 @@ function renderOrder(order: OrderData, email: string): string {
       </div>`;
   }
 
-  const itemsHtml = order.line_items.map((item) => {
-    const shipRange = item.expected_ship_week_start && item.expected_ship_week_end
-      ? `Ship: ${formatDate(item.expected_ship_week_start)} – ${formatDate(item.expected_ship_week_end)}`
-      : "";
-    const stText = itemStatusText(item.status, item.fulfilled_quantity, item.quantity);
-    const stColor = itemStatusColor(item.fulfilled_quantity, item.quantity);
+  const itemsHtml = order.line_items
+    .map((item) => {
+      const shipRange =
+        item.expected_ship_week_start && item.expected_ship_week_end
+          ? `Ship: ${formatDate(item.expected_ship_week_start)} – ${formatDate(item.expected_ship_week_end)}`
+          : "";
+      const stText = itemStatusText(
+        item.status,
+        item.fulfilled_quantity,
+        item.quantity,
+      );
+      const stColor = itemStatusColor(item.fulfilled_quantity, item.quantity);
 
-    return `<div class="item">
+      return `<div class="item">
       <div class="item-title">${escapeHtml(item.title)}</div>
       ${item.variant ? `<div class="item-variant">${escapeHtml(item.variant)}</div>` : ""}
       <div class="item-meta">
@@ -372,9 +414,12 @@ function renderOrder(order: OrderData, email: string): string {
         <span style="color:#64748b;">${shipRange}</span>
       </div>
     </div>`;
-  }).join("");
+    })
+    .join("");
 
-  return page(`Order ${order.order_number} - Even Realities`, `
+  return page(
+    `Order ${order.order_number} - Even Realities`,
+    `
     <div class="card">
       <h1>Order #${escapeHtml(order.order_number)}</h1>
       <p class="subtitle">Placed ${formatDate(order.created_at)}</p>
@@ -398,7 +443,8 @@ function renderOrder(order: OrderData, email: string): string {
     </div>
 
     <div class="footer"><a href="/" style="color:#94a3b8;">New lookup</a></div>
-  `);
+  `,
+  );
 }
 
 function escapeHtml(str: string): string {
