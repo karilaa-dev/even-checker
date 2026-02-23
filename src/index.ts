@@ -397,8 +397,7 @@ function renderOrder(order: OrderData, email: string): string {
       ${itemsHtml}
     </div>
 
-    <div class="footer">Auto-refreshes every 5 minutes &middot; <a href="/" style="color:#94a3b8;">New lookup</a></div>
-    <script>setTimeout(() => location.reload(), 5 * 60 * 1000);</script>
+    <div class="footer"><a href="/" style="color:#94a3b8;">New lookup</a></div>
   `);
 }
 
