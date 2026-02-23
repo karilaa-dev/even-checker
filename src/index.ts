@@ -1,5 +1,10 @@
 const API_BASE = "https://track.evenrealities.com";
-const API_KEY = "1600082c-e5f9-11f0-aad8-42010a08401c";
+const FALLBACK_API_KEY = "1600082c-e5f9-11f0-aad8-42010a08401c";
+const KEY_CACHE_TTL = 3600; // 1 hour
+const CACHE_KEY_URL = "https://even-checker-internal/api-key";
+
+let memCachedKey: string | null = null;
+let memCachedAt = 0;
 
 interface LineItem {
   title: string;
@@ -41,6 +46,66 @@ interface ApiResponse {
   };
 }
 
+async function scrapeApiKey(): Promise<string | null> {
+  try {
+    const resp = await fetch(API_BASE, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; EvenChecker/1.0)" },
+    });
+    if (!resp.ok) return null;
+
+    const html = await resp.text();
+    const patterns = [
+      /API_KEY\s*:\s*(?:window\.SHIPPING_API_KEY\s*\|\|\s*)?['"]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]/i,
+      /SHIPPING_API_KEY\s*=\s*['"]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]/i,
+    ];
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1]) return match[1];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function getApiKey(): Promise<string> {
+  const now = Date.now();
+
+  // L1: in-memory cache
+  if (memCachedKey && now - memCachedAt < KEY_CACHE_TTL * 1000) {
+    return memCachedKey;
+  }
+
+  // L2: Cloudflare Cache API
+  const cache = caches.default;
+  const cacheReq = new Request(CACHE_KEY_URL);
+  const cached = await cache.match(cacheReq);
+  if (cached) {
+    const key = await cached.text();
+    if (key) {
+      memCachedKey = key;
+      memCachedAt = now;
+      return key;
+    }
+  }
+
+  // L3: scrape from origin
+  const scraped = await scrapeApiKey();
+  if (scraped) {
+    memCachedKey = scraped;
+    memCachedAt = now;
+    await cache.put(
+      cacheReq,
+      new Response(scraped, {
+        headers: { "Cache-Control": `public, max-age=${KEY_CACHE_TTL}`, "Content-Type": "text/plain" },
+      }),
+    );
+    return scraped;
+  }
+
+  return FALLBACK_API_KEY;
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -53,8 +118,9 @@ export default {
 
     try {
       const apiUrl = `${API_BASE}/api/order_info?email=${encodeURIComponent(email)}&order_number=${encodeURIComponent(orderNumber)}`;
+      const apiKey = await getApiKey();
       const resp = await fetch(apiUrl, {
-        headers: { "Api-Key": API_KEY },
+        headers: { "Api-Key": apiKey },
       });
 
       if (!resp.ok) {
