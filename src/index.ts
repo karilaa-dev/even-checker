@@ -89,18 +89,45 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function statusLabel(fulfillmentStatus: string, financialStatus: string): string {
-  if (fulfillmentStatus === "fulfilled") return "Shipped";
-  if (fulfillmentStatus === "partial") return "Partially Shipped";
-  if (financialStatus === "paid") return "Processing";
-  if (financialStatus === "pending") return "Pending Payment";
-  return fulfillmentStatus || financialStatus || "Unknown";
+// Progress step computation (mirrors the original site logic)
+// Steps: 1=Order placed, 2=In production, 3=Warehouse processing, 4=Shipped
+
+function getCoreProducts(items: LineItem[]): LineItem[] {
+  return items.filter(i => i.is_core_product && (i.current_quantity || 0) > 0);
 }
 
-function statusColor(fulfillmentStatus: string): string {
-  if (fulfillmentStatus === "fulfilled") return "#16a34a";
-  if (fulfillmentStatus === "partial") return "#ca8a04";
-  return "#2563eb";
+function isShipped(item: LineItem): boolean {
+  return (item.fulfilled_quantity || 0) >= (item.quantity || 0);
+}
+
+function hasSchedule(item: LineItem): boolean {
+  return !!item.expected_ship_week_start?.trim() && !!item.expected_ship_week_end?.trim();
+}
+
+function hasReachedScheduleEnd(item: LineItem): boolean {
+  if (!item.expected_ship_week_end) return false;
+  const end = new Date(item.expected_ship_week_end);
+  return !isNaN(end.getTime()) && new Date() >= end;
+}
+
+function computeProgressStep(items: LineItem[]): number {
+  const core = getCoreProducts(items);
+  if (core.length === 0) return 1;
+
+  const allShipped = core.every(i => isShipped(i));
+  if (allShipped) return 4;
+
+  const anyShipped = core.some(i => isShipped(i));
+  if (anyShipped) return 3;
+
+  const allCompleted = core.every(i => hasSchedule(i) && hasReachedScheduleEnd(i));
+  if (allCompleted) return 3;
+
+  const noScheduled = !core.some(i => hasSchedule(i));
+  if (noScheduled) return 1;
+
+  // Some or all scheduled but not yet completed
+  return 2;
 }
 
 function itemStatusText(status: number, fulfilledQty: number, qty: number): string {
@@ -152,6 +179,17 @@ function page(title: string, body: string): string {
   button { padding: 0.7rem; background: #1e293b; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; }
   button:hover { background: #334155; }
   .footer { text-align: center; color: #94a3b8; font-size: 0.75rem; margin-top: 1rem; }
+  .progress-wrapper { padding: 1.5rem 0 0.5rem; }
+  .progress { display: flex; align-items: flex-start; justify-content: space-between; position: relative; }
+  .progress-track { position: absolute; top: 20px; left: 12.5%; right: 12.5%; height: 3px; background: #e2e8f0; z-index: 0; }
+  .progress-fill { position: absolute; top: 20px; left: 12.5%; height: 3px; background: #22c55e; z-index: 1; }
+  .step { display: flex; flex-direction: column; align-items: center; z-index: 2; flex: 1; }
+  .step-dot { width: 40px; height: 40px; border-radius: 10px; border: 2.5px solid #dce3eb; background: #fff; display: flex; align-items: center; justify-content: center; margin-bottom: 0.6rem; }
+  .step.completed .step-dot { border-color: #22c55e; background: #22c55e; }
+  .step.active .step-dot { border-color: #22c55e; background: #fff; }
+  .step-label { font-size: 0.75rem; color: #b0b8c4; text-align: center; }
+  .step.completed .step-label { color: #1e293b; }
+  .step.active .step-label { color: #1e293b; }
 </style>
 </head>
 <body>
@@ -188,9 +226,48 @@ function renderError(message: string): string {
   `);
 }
 
+function renderProgressBar(step: number): string {
+  const steps = ["Order placed", "In production", "Warehouse processing", "Shipped"];
+  const checkSvg = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5.5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const activeCheckSvg = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 5.5" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const chevronSvg = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 3.5L9 7l-3.5 3.5" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  // Fill spans between dot centers: 0% at first dot, 100% at last dot
+  // Track goes from 12.5% to 87.5% (center of first to center of last step in a 4-step layout)
+  // Fill width relative to track: (step-1) / (numSteps-1) * 100%
+  const fillPct = Math.round(((step - 1) / (steps.length - 1)) * 100);
+
+  const stepsHtml = steps.map((label, i) => {
+    const stepNum = i + 1;
+    let cls = "step";
+    let dot: string;
+    if (stepNum < step) {
+      cls += " completed";
+      dot = `<div class="step-dot">${checkSvg}</div>`;
+    } else if (stepNum === step) {
+      cls += " active";
+      dot = `<div class="step-dot">${activeCheckSvg}</div>`;
+    } else {
+      dot = `<div class="step-dot">${chevronSvg}</div>`;
+    }
+    return `<div class="${cls}">${dot}<div class="step-label">${label}</div></div>`;
+  }).join("");
+
+  return `
+    <div class="card">
+      <div class="section-title">Order Status</div>
+      <div class="progress-wrapper">
+        <div class="progress">
+          <div class="progress-track"></div>
+          <div class="progress-fill" style="width:${fillPct}%;"></div>
+          ${stepsHtml}
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderOrder(order: OrderData, email: string): string {
-  const status = statusLabel(order.fulfillment_status, order.financial_status);
-  const color = statusColor(order.fulfillment_status);
+  const progressStep = computeProgressStep(order.line_items);
 
   const estStart = formatDate(order.estimatedDeleiveryStartDate);
   const estEnd = formatDate(order.estimatedDeliveryEndDate);
@@ -235,8 +312,9 @@ function renderOrder(order: OrderData, email: string): string {
     <div class="card">
       <h1>Order #${escapeHtml(order.order_number)}</h1>
       <p class="subtitle">Placed ${formatDate(order.created_at)}</p>
-      <span class="badge" style="background:${color};">${status}</span>
     </div>
+
+    ${renderProgressBar(progressStep)}
 
     <div class="card">
       <div class="section-title">Order Details</div>
