@@ -1,4 +1,6 @@
-# even-checker
+# even-track
+
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/karilaa-dev/even-track)
 
 Cloudflare Worker that proxies the [Even Realities](https://evenrealities.com) order tracking API and renders a clean, bookmarkable status page.
 
@@ -9,7 +11,7 @@ The official tracking site at `track.evenrealities.com` requires manually enteri
 ## Usage
 
 ```
-https://even-checker.<subdomain>.workers.dev/?email=you@example.com&order_number=12345
+https://even-track.<subdomain>.workers.dev/?email=you@example.com&order_number=12345
 ```
 
 Without params, it shows a simple lookup form.
