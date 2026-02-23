@@ -393,7 +393,8 @@ function renderOrder(order: OrderData, email: string): string {
       </div>`;
   }
 
-  const itemsHtml = order.line_items
+  const itemsHtml = [...order.line_items]
+    .sort((a, b) => a.title.localeCompare(b.title))
     .map((item) => {
       const shipRange =
         item.expected_ship_week_start && item.expected_ship_week_end
